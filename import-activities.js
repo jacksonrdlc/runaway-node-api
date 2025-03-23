@@ -18,6 +18,7 @@ function transformData(record) {
         external_id: record.id?.toString(),
         upload_id: record.upload_id,
         name: record.name,
+        type: record.type,
         detail: record.description,
         distance: record.distance,
         moving_time: record.moving_time,

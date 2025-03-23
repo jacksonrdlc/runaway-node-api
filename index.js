@@ -213,6 +213,114 @@ app.get('/refresh-tokens/:user_id', async (req, res) => {
 });
 
 /**
+ * @api {post} /athletes/:id Update athlete
+ * @apiName UpdateAthlete
+ * @apiGroup Athletes
+ * @apiDescription Updates an athlete's information by ID
+ * 
+ * @apiParam {String} id Athlete's unique identifier
+ * @apiBody {Object} athlete Athlete data
+ * 
+ * @apiSuccess {Object} data Updated athlete record
+ * @apiError (400) {Object} error Missing required fields
+ * @apiError (404) {Object} error Athlete not found
+ * @apiError (500) {Object} error Server error
+ */
+app.post('/athletes/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const athleteData = req.body;
+
+        if (!id || !athleteData) {
+            return res.status(400).json({
+                error: 'Athlete ID and update data are required'
+            });
+        }
+
+        // Remove any id from the body to prevent overwriting
+        delete athleteData.id;
+
+        const { data, error } = await supabase
+            .from('athletes')
+            .update({
+                ...athleteData,
+                updated_at: new Date().toISOString()
+            })
+            .eq('user_id', id)
+            .select()
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return res.status(404).json({
+                    error: 'Athlete not found'
+                });
+            }
+            throw error;
+        }
+
+        res.status(200).json(data);
+    } catch (error) {
+        console.error('Error updating athlete:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * @api {post} /athletes/:id/stats Update athlete stats
+ * @apiName UpdateAthleteStats
+ * @apiGroup Athletes
+ * @apiDescription Updates an athlete's statistics by athlete ID
+ * 
+ * @apiParam {String} id Athlete's unique identifier
+ * @apiBody {Object} stats Athlete statistics data
+ * 
+ * @apiSuccess {Object} data Updated athlete stats record
+ * @apiError (400) {Object} error Missing required fields
+ * @apiError (404) {Object} error Athlete stats not found
+ * @apiError (500) {Object} error Server error
+ */
+app.post('/athletes/:id/stats', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const statsData = req.body;
+
+        if (!id || !statsData) {
+            return res.status(400).json({
+                error: 'Athlete ID and stats data are required'
+            });
+        }
+
+        // Remove any athlete_id from the body to prevent overwriting
+        delete statsData.user_id;
+
+        const { data, error } = await supabase
+            .from('athlete_stats')
+            .update({
+                ...statsData,
+                updated_at: new Date().toISOString()
+            })
+            .eq('user_id', id)
+            .select()
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return res.status(404).json({
+                    error: 'Athlete stats not found'
+                });
+            }
+            throw error;
+        }
+
+        res.status(200).json(data);
+    } catch (error) {
+        console.error('Error updating athlete stats:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
  * Database Schema
  * @typedef {Object} RefreshToken
  * @property {string} user_id - Primary key, user's unique identifier
