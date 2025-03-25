@@ -138,19 +138,17 @@ app.post('/refresh-tokens', async (req, res) => {
             });
         }
 
+        console.log(user_id);
+        console.log(refresh_token);
+
         const { data, error } = await supabase
             .from('refresh_tokens')
-            .upsert(
-                {
-                    user_id,
-                    refresh_token,
-                    updated_at: new Date().toISOString()
-                },
-                {
-                    onConflict: 'user_id',
-                    returning: true
-                }
-            );
+            .update({
+                refresh_token,
+                updated_at: new Date().toISOString()
+            })
+            .eq('user_id', user_id)
+            .select();
 
         if (error) throw error;
 
@@ -240,6 +238,9 @@ app.post('/athletes/:id', async (req, res) => {
         // Remove any id from the body to prevent overwriting
         delete athleteData.id;
 
+        console.log(id);
+        console.log(athleteData);
+
         const { data, error } = await supabase
             .from('athletes')
             .update({
@@ -247,13 +248,12 @@ app.post('/athletes/:id', async (req, res) => {
                 updated_at: new Date().toISOString()
             })
             .eq('user_id', id)
-            .select()
-            .single();
+            .select();
 
         if (error) {
-            if (error.code === 'PGRST116') {
-                return res.status(404).json({
-                    error: 'Athlete not found'
+            if (error) {
+                return res.status(200).json({
+                    message: error.message
                 });
             }
             throw error;
@@ -301,13 +301,12 @@ app.post('/athletes/:id/stats', async (req, res) => {
                 updated_at: new Date().toISOString()
             })
             .eq('user_id', id)
-            .select()
-            .single();
+            .select();
 
         if (error) {
-            if (error.code === 'PGRST116') {
-                return res.status(404).json({
-                    error: 'Athlete stats not found'
+            if (error) {
+                return res.status(200).json({
+                    message: error.message
                 });
             }
             throw error;
