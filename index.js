@@ -128,23 +128,27 @@ app.post('/activities', async (req, res) => {
  *   "refresh_token": "abc123xyz"
  * }
  */
-app.post('/refresh-tokens', async (req, res) => {
+app.post('/tokens', async (req, res) => {
     try {
-        const { user_id, refresh_token } = req.body;
+        const { user_id, refresh_token, access_token, expires_at } = req.body;
 
-        if (!user_id || !refresh_token) {
+        if (!user_id || !refresh_token || !access_token || !expires_at) {
             return res.status(400).json({
-                error: 'user_id and refresh_token are required'
+                error: 'user_id, refresh_token, access_token, and expires_at are required'
             });
         }
 
         console.log(user_id);
         console.log(refresh_token);
+        console.log(access_token);
+        console.log(expires_at);
 
         const { data, error } = await supabase
-            .from('refresh_tokens')
+            .from('tokens')
             .update({
                 refresh_token,
+                access_token,
+                expires_at,
                 updated_at: new Date().toISOString()
             })
             .eq('user_id', user_id)
@@ -189,8 +193,8 @@ app.get('/refresh-tokens/:user_id', async (req, res) => {
         }
 
         const { data, error } = await supabase
-            .from('refresh_tokens')
-            .select('refresh_token, updated_at')
+            .from('tokens')
+            .select('refresh_token, expires_at')
             .eq('user_id', user_id)
             .single();
 
@@ -206,6 +210,63 @@ app.get('/refresh-tokens/:user_id', async (req, res) => {
         res.status(200).json(data);
     } catch (error) {
         console.error('Error fetching refresh token:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * @api {get} /tokens/:user_id Get access token
+ * @apiName GetAccessToken
+ * @apiGroup Tokens
+ * @apiDescription Retrieves an access token for a specific user
+ * 
+ * @apiParam {String} user_id User's unique identifier
+ * 
+ * @apiSuccess {Object} data Access token record
+ * @apiSuccess {String} data.access_token Access token
+ * @apiSuccess {String} data.updated_at Last update timestamp
+ * 
+ * @apiError (400) {Object} error Missing user_id
+ * @apiError (404) {Object} error Access token not found
+ * @apiError (500) {Object} error Server error
+ * 
+ * @example
+ * GET /tokens/user123
+ */
+app.get('/tokens/:user_id', async (req, res) => {
+    try {
+        const { user_id } = req.params;
+
+        if (!user_id) {
+            return res.status(400).json({
+                error: 'user_id is required'
+            });
+        }
+
+        const { data, error } = await supabase
+            .from('tokens')
+            .select('access_token, expires_at')
+            .eq('user_id', user_id)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return res.status(404).json({
+                    error: 'Access token not found'
+                });
+            }
+            throw error;
+        }
+
+        if (!data?.access_token) {
+            return res.status(404).json({
+                error: 'Access token not found for this user'
+            });
+        }
+
+        res.status(200).json(data);
+    } catch (error) {
+        console.error('Error fetching access token:', error);
         res.status(500).json({ error: error.message });
     }
 });
