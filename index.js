@@ -38,6 +38,7 @@ const supabase = createClient(
  * @apiError {Object} error Error message
  */
 app.get('/activities', async (req, res) => {
+    console.log('Fetching all activities');
     try {
         const { data, error } = await supabase
             .from('activities')
@@ -61,6 +62,7 @@ app.get('/activities', async (req, res) => {
  * @apiError (404) {Object} error Activity not found
  */
 app.get('/activities/:id', async (req, res) => {
+    console.log('Fetching activity by ID:', req.params.id);
     try {
         const { id } = req.params;
         const { data, error } = await supabase
@@ -90,6 +92,7 @@ app.get('/activities/:id', async (req, res) => {
  * @apiError {Object} error Error message
  */
 app.post('/activities', async (req, res) => {
+    console.log('Creating new activity:', req.body);
     try {
         const { data, error } = await supabase
             .from('activities')
@@ -105,13 +108,15 @@ app.post('/activities', async (req, res) => {
 });
 
 /**
- * @api {post} /refresh-tokens Upsert refresh token
+ * @api {post} /tokens Upsert refresh token
  * @apiName UpsertRefreshToken
  * @apiGroup RefreshTokens
  * @apiDescription Updates an existing refresh token or creates a new one if it doesn't exist
  * 
  * @apiBody {String} user_id User's unique identifier
  * @apiBody {String} refresh_token OAuth refresh token
+ * @apiBody {String} access_token OAuth access token
+ * @apiBody {Number} expires_at Token expiration timestamp
  * 
  * @apiSuccess {Object} data Upserted refresh token record
  * @apiSuccess {String} data.user_id User ID
@@ -122,13 +127,16 @@ app.post('/activities', async (req, res) => {
  * @apiError (500) {Object} error Server error
  * 
  * @example
- * POST /refresh-tokens
+ * POST /tokens
  * {
  *   "user_id": "user123",
- *   "refresh_token": "abc123xyz"
+ *   "refresh_token": "abc123xyz",
+ *   "access_token": "def456uvw",
+ *   "expires_at": 1640995200
  * }
  */
 app.post('/tokens', async (req, res) => {
+    console.log('Upserting refresh token for user:', req.body.user_id);
     try {
         const { user_id, refresh_token, access_token, expires_at } = req.body;
 
@@ -138,23 +146,32 @@ app.post('/tokens', async (req, res) => {
             });
         }
 
-        console.log(user_id);
-        console.log(refresh_token);
-        console.log(access_token);
-        console.log(expires_at);
-
         const { data, error } = await supabase
             .from('tokens')
-            .update({
+            .upsert({
+                user_id,
                 refresh_token,
                 access_token,
-                expires_at,
+                expires_at: new Date(expires_at * 1000),
                 updated_at: new Date().toISOString()
             })
-            .eq('user_id', user_id)
             .select();
 
-        if (error) throw error;
+        if (error) {
+            console.error('Database error upserting token:', error);
+            if (error.code === '23505') {
+                return res.status(409).json({
+                    error: 'Token conflict occurred'
+                });
+            }
+            throw error;
+        }
+
+        if (!data || data.length === 0) {
+            return res.status(500).json({
+                error: 'Failed to upsert token'
+            });
+        }
 
         res.status(200).json(data[0]);
     } catch (error) {
@@ -183,6 +200,7 @@ app.post('/tokens', async (req, res) => {
  * GET /refresh-tokens/user123
  */
 app.get('/refresh-tokens/:user_id', async (req, res) => {
+    console.log('Fetching refresh token for user:', req.params.user_id);
     try {
         const { user_id } = req.params;
 
@@ -234,10 +252,11 @@ app.get('/refresh-tokens/:user_id', async (req, res) => {
  * GET /tokens/user123
  */
 app.get('/tokens/:user_id', async (req, res) => {
+    console.log('Fetching access token for user:', req.params.user_id);
     try {
         const { user_id } = req.params;
 
-        if (!user_id) {
+        if (!user_id || user_id.trim() === '') {
             return res.status(400).json({
                 error: 'user_id is required'
             });
@@ -247,18 +266,22 @@ app.get('/tokens/:user_id', async (req, res) => {
             .from('tokens')
             .select('access_token, expires_at')
             .eq('user_id', user_id)
-            .single();
+            .maybeSingle();
 
         if (error) {
-            if (error.code === 'PGRST116') {
-                return res.status(404).json({
-                    error: 'Access token not found'
-                });
-            }
-            throw error;
+            console.error('Database error fetching access token:', error);
+            return res.status(500).json({
+                error: 'Database error occurred'
+            });
         }
 
-        if (!data?.access_token) {
+        if (!data) {
+            return res.status(404).json({
+                error: 'Access token not found'
+            });
+        }
+
+        if (!data.access_token) {
             return res.status(404).json({
                 error: 'Access token not found for this user'
             });
@@ -286,6 +309,7 @@ app.get('/tokens/:user_id', async (req, res) => {
  * @apiError (500) {Object} error Server error
  */
 app.post('/athletes/:id', async (req, res) => {
+    console.log('Updating athlete:', req.params.id);
     try {
         const { id } = req.params;
         const athleteData = req.body;
@@ -299,8 +323,6 @@ app.post('/athletes/:id', async (req, res) => {
         // Remove any id from the body to prevent overwriting
         delete athleteData.id;
 
-        console.log(id);
-        console.log(athleteData);
 
         const { data, error } = await supabase
             .from('athletes')
@@ -311,14 +333,7 @@ app.post('/athletes/:id', async (req, res) => {
             .eq('user_id', id)
             .select();
 
-        if (error) {
-            if (error) {
-                return res.status(200).json({
-                    message: error.message
-                });
-            }
-            throw error;
-        }
+        if (error) throw error;
 
         res.status(200).json(data);
     } catch (error) {
@@ -342,6 +357,7 @@ app.post('/athletes/:id', async (req, res) => {
  * @apiError (500) {Object} error Server error
  */
 app.post('/athletes/:id/stats', async (req, res) => {
+    console.log('Updating athlete stats:', req.params.id);
     try {
         const { id } = req.params;
         const statsData = req.body;
@@ -352,8 +368,6 @@ app.post('/athletes/:id/stats', async (req, res) => {
             });
         }
 
-        // Remove any athlete_id from the body to prevent overwriting
-        delete statsData.user_id;
 
         const { data, error } = await supabase
             .from('athlete_stats')
@@ -364,10 +378,154 @@ app.post('/athletes/:id/stats', async (req, res) => {
             .eq('user_id', id)
             .select();
 
+        if (error) throw error;
+
+        res.status(200).json(data);
+    } catch (error) {
+        console.error('Error updating athlete stats:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * @api {post} /map Create new map entry
+ * @apiName CreateMapEntry
+ * @apiGroup Map
+ * @apiDescription Creates a new entry in the map table
+ * 
+ * @apiBody {Object} mapData Map entry data
+ * 
+ * @apiSuccess {Object} data Created map entry
+ * @apiError (400) {Object} error Missing required fields
+ * @apiError (500) {Object} error Server error
+ * 
+ * @example
+ * POST /map
+ * {
+ *   "map_id": "user123",
+ *   "summary_polyline": 37.7749
+ * }
+ */
+app.post('/maps', async (req, res) => {
+    console.log('Creating new map entry:', req.body);
+    try {
+        const mapData = req.body;
+
+        if (!mapData) {
+            return res.status(400).json({
+                error: 'Map data is required'
+            });
+        }
+
+        const { data, error } = await supabase
+            .from('maps')
+            .insert([{
+                ...mapData,
+                created_at: new Date().toISOString()
+            }])
+            .select();
+
+        if (error) throw error;
+
+        res.status(201).json(data[0]);
+    } catch (error) {
+        console.error('Error creating map entry:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * @api {post} /sessions Create new session mapping
+ * @apiName CreateSession
+ * @apiGroup Sessions
+ * @apiDescription Creates a new session mapping between sessionId and userId
+ * 
+ * @apiBody {String} sessionId Unique session identifier
+ * @apiBody {String} userId User identifier to map to the session
+ * 
+ * @apiSuccess {Object} data Created session mapping
+ * @apiError (400) {Object} error Missing required fields
+ * @apiError (500) {Object} error Server error
+ * 
+ * @example
+ * POST /sessions
+ * {
+ *   "sessionId": "sess_abc123",
+ *   "userId": "user_456"
+ * }
+ */
+app.post('/sessions', async (req, res) => {
+    console.log('Creating new session mapping:', req.body);
+    try {
+        const { session_id, user_id, auth_id } = req.body;
+
+        if (!session_id || !user_id || !auth_id) {
+            return res.status(400).json({
+                error: 'session_id and user_id are required'
+            });
+        }
+
+        console.log(session_id, user_id);
+
+        const { data, error } = await supabase
+            .from('sessions')
+            .insert([{
+                session_id: session_id,
+                user_id: user_id,
+                auth_id: auth_id,
+                created_at: new Date().toISOString()
+            }])
+            .select();
+
+        if (error) throw error;
+
+        res.status(201).json(data[0]);
+    } catch (error) {
+        console.error('Error creating session mapping:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * @api {get} /sessions/:sessionId Get userId for session
+ * @apiName GetSessionUser
+ * @apiGroup Sessions
+ * @apiDescription Retrieves the userId associated with a sessionId
+ * 
+ * @apiParam {String} sessionId Session identifier
+ * 
+ * @apiSuccess {Object} data Session mapping data
+ * @apiSuccess {String} data.user_id User ID associated with the session
+ * @apiSuccess {String} data.created_at Session creation timestamp
+ * 
+ * @apiError (400) {Object} error Missing sessionId
+ * @apiError (404) {Object} error Session not found
+ * @apiError (500) {Object} error Server error
+ * 
+ * @example
+ * GET /sessions/sess_abc123
+ */
+app.get('/sessions/:sessionId', async (req, res) => {
+    console.log('Fetching userId for session:', req.params.sessionId);
+    try {
+        const { session_id } = req.params;
+
+        if (!session_id) {
+            return res.status(400).json({
+                error: 'session_id is required'
+            });
+        }
+
+        const { data, error } = await supabase
+            .from('sessions')
+            .select('user_id, created_at')
+            .eq('session_id', session_id)
+            .single();
+
         if (error) {
-            if (error) {
-                return res.status(200).json({
-                    message: error.message
+            if (error.code === 'PGRST116') {
+                return res.status(404).json({
+                    error: 'Session not found'
                 });
             }
             throw error;
@@ -375,7 +533,61 @@ app.post('/athletes/:id/stats', async (req, res) => {
 
         res.status(200).json(data);
     } catch (error) {
-        console.error('Error updating athlete stats:', error);
+        console.error('Error fetching session:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * @api {get} /auth/:userId Get auth ID by user ID
+ * @apiName GetAuthIdByUserId
+ * @apiGroup Auth
+ * @apiDescription Retrieves the auth ID associated with a user ID
+ * 
+ * @apiParam {String} userId User identifier
+ * 
+ * @apiSuccess {Object} data Auth mapping data
+ * @apiSuccess {String} data.auth_id Auth ID associated with the user
+ * @apiSuccess {String} data.created_at Auth mapping creation timestamp
+ * 
+ * @apiError (400) {Object} error Missing userId
+ * @apiError (404) {Object} error Auth mapping not found
+ * @apiError (500) {Object} error Server error
+ * 
+ * @example
+ * GET /auth/user_456
+ */
+app.get('/auth/:userId', async (req, res) => {
+    console.log('Fetching auth ID for user:', req.params.userId);
+    try {
+        const { userId } = req.params;
+
+        if (!userId) {
+            return res.status(400).json({
+                error: 'userId is required'
+            });
+        }
+        console.log(userId);
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('auth_id, created_at')
+            .eq('user_id', userId)
+            .single();
+        console.log(data);
+        console.log(error);
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return res.status(404).json({
+                    error: 'Auth mapping not found'
+                });
+            }
+            throw error;
+        }
+
+        res.status(200).json(data);
+    } catch (error) {
+        console.error('Error fetching auth ID:', error);
         res.status(500).json({ error: error.message });
     }
 });
